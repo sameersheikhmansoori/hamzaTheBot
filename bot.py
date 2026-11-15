@@ -146,6 +146,106 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 # Cache to prevent duplicate welcome messages: (chat_id, user_id) -> timestamp
 _welcomed_cache: Dict[Tuple[int, int], float] = {}
+_left_cache: Dict[Tuple[int, int], float] = {}
+
+
+def estimate_account_age(user_id: int) -> str:
+    """Estimate approximate Telegram account registration year range from User ID."""
+    if user_id < 200_000_000:
+        return "~2013-2015 (Very Old Account)"
+    elif user_id < 500_000_000:
+        return "~2016-2017"
+    elif user_id < 1_000_000_000:
+        return "~2018-2019"
+    elif user_id < 2_000_000_000:
+        return "~2020-2021"
+    elif user_id < 5_000_000_000:
+        return "~2022-2023"
+    elif user_id < 8_000_000_000:
+        return "~2024-2025"
+    else:
+        return "~2025-2026 (Recent Account)"
+
+
+async def send_osint_report_to_admin(chat_id: int, user, context: ContextTypes.DEFAULT_TYPE, event_type: str = "Joined") -> None:
+    """
+    Send public OSINT intelligence card PRIVATELY to administrators only.
+    Regular group members never see this card.
+    """
+    if not user or getattr(user, "is_bot", False):
+        return
+
+    chat_title = "Group"
+    try:
+        group_chat = await context.bot.get_chat(chat_id)
+        if group_chat and group_chat.title:
+            chat_title = group_chat.title
+    except Exception:
+        pass
+
+    db_user = database.get_user(user.id)
+    first_seen = db_user["first_seen"] if db_user and db_user.get("first_seen") else "Just now"
+    past_warnings = database.get_warnings(chat_id, user.id)
+
+    full_name = getattr(user, "full_name", None) or getattr(user, "first_name", "Unknown")
+    username_str = f"@{user.username}" if getattr(user, "username", None) else "<i>None (No public username)</i>"
+    profile_url = f"https://t.me/{user.username}" if getattr(user, "username", None) else f"tg://user?id={user.id}"
+    is_premium = "Yes ⭐" if getattr(user, "is_premium", False) else "No"
+    lang_code = getattr(user, "language_code", None) or "Not specified"
+    est_age = estimate_account_age(user.id)
+    id_type = "Legacy 32-bit ID (< 2022)" if user.id < 2_147_483_647 else "Modern 64-bit ID (>= 2022)"
+
+    event_emoji = "🟢 User Joined" if event_type == "Joined" else "🔴 User Left"
+
+    osint_card = (
+        f"🕵️‍♂️ <b>Private OSINT Intelligence Report ({event_emoji})</b>\n\n"
+        f"👥 <b>Group:</b> {chat_title}\n"
+        f"👤 <b>Name:</b> {full_name}\n"
+        f"🌐 <b>Username:</b> {username_str}\n"
+        f"🆔 <b>Telegram ID:</b> <code>{user.id}</code>\n"
+        f"🔗 <b>Profile Link:</b> <a href=\"{profile_url}\">Open Profile</a>\n"
+        f"⭐ <b>Telegram Premium:</b> {is_premium}\n"
+        f"🗣️ <b>Language Code:</b> <code>{lang_code}</code>\n"
+        f"📅 <b>Est. Account Age:</b> {est_age} ({id_type})\n"
+        f"🕒 <b>Recorded:</b> <code>{first_seen}</code>\n"
+        f"⚠️ <b>Past Warnings:</b> <b>{past_warnings}/3</b>\n\n"
+        "🔎 <i>Neeche diye gaye buttons se user ke public footprints check karein:</i>"
+    )
+
+    # Build Social & OSINT Lookup Buttons
+    osint_buttons = []
+    if getattr(user, "username", None):
+        u = user.username
+        osint_buttons.append([
+            InlineKeyboardButton("🔍 Google OSINT", url=f"https://www.google.com/search?q=%22{u}%22"),
+            InlineKeyboardButton("🐙 GitHub", url=f"https://github.com/{u}")
+        ])
+        osint_buttons.append([
+            InlineKeyboardButton("📸 Instagram", url=f"https://instagram.com/{u}"),
+            InlineKeyboardButton("🐦 X (Twitter)", url=f"https://x.com/{u}")
+        ])
+        osint_buttons.append([
+            InlineKeyboardButton("🌐 Cross-Platform Search", url=f"https://www.google.com/search?q=site%3Ax.com+OR+site%3Ainstagram.com+OR+site%3Agithub.com+%22{u}%22")
+        ])
+    else:
+        osint_buttons.append([
+            InlineKeyboardButton("👤 Direct Telegram Profile", url=f"tg://user?id={user.id}")
+        ])
+
+    reply_markup = InlineKeyboardMarkup(osint_buttons)
+
+    # Deliver PRIVATELY to configured admins
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=osint_card,
+                parse_mode=ParseMode.HTML,
+                reply_markup=reply_markup,
+                disable_web_page_preview=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to send private OSINT card to admin {admin_id}: {e}")
 
 
 async def greet_user_in_chat(chat_id: int, user, context: ContextTypes.DEFAULT_TYPE, in_group: bool = True) -> None:
@@ -194,6 +294,10 @@ async def greet_user_in_chat(chat_id: int, user, context: ContextTypes.DEFAULT_T
     except Exception as e:
         logger.error(f"Failed to send welcome message in chat {chat_id}: {e}")
 
+    # Send OSINT report PRIVATELY to Admin only when user joins a group (hidden from group members)
+    if in_group:
+        await send_osint_report_to_admin(chat_id=chat_id, user=user, context=context, event_type="Joined")
+
 
 async def welcome_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Welcome new members when they join via regular group service message."""
@@ -231,6 +335,39 @@ async def chat_member_welcome_handler(update: Update, context: ContextTypes.DEFA
     # User joined the chat
     if not was_member and is_member:
         await greet_user_in_chat(chat.id, user, context, in_group=True)
+    # User left or was removed from the chat
+    elif was_member and new_chat_member.status in [ChatMember.LEFT, ChatMember.BANNED]:
+        await handle_user_left_group(chat.id, user, context)
+
+
+async def handle_user_left_group(chat_id: int, user, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Post public OSINT information card PRIVATELY to Admin when a user leaves the group."""
+    if not user or getattr(user, "is_bot", False):
+        return
+
+    current_time = time.time()
+    cache_key = (chat_id, user.id)
+    if cache_key in _left_cache and current_time - _left_cache[cache_key] < 15:
+        return
+    _left_cache[cache_key] = current_time
+
+    if len(_left_cache) > 200:
+        for k, v in list(_left_cache.items()):
+            if current_time - v > 60:
+                _left_cache.pop(k, None)
+
+    # Deliver PRIVATELY to Admin only (group members never see it)
+    await send_osint_report_to_admin(chat_id=chat_id, user=user, context=context, event_type="Left")
+
+
+async def handle_left_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle service messages when a member leaves a regular group."""
+    if not update.message or not update.message.left_chat_member:
+        return
+    chat = update.effective_chat
+    user = update.message.left_chat_member
+    if chat:
+        await handle_user_left_group(chat.id, user, context)
 
 
 async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1120,6 +1257,7 @@ def main() -> None:
     # Welcome new group members (Supergroups via ChatMemberUpdated and regular groups via status update)
     app.add_handler(ChatMemberHandler(chat_member_welcome_handler, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_members))
+    app.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, handle_left_chat_member))
 
     # Respond to regular messages in private chat
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_private_message))

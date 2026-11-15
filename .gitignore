@@ -1,1 +1,9 @@
 .env
+*.env
+bot.db
+bot.log
+bot.pid
+venv/
+__pycache__/
+*.pyc
+.DS_Store

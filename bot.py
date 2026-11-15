@@ -80,6 +80,13 @@ def build_user_menu_keyboard(is_admin_user: bool = False, in_group: bool = False
     if row:
         keyboard.append(row)
 
+    # Must-Read Rules button alongside cohort links
+    if in_group and bot_username:
+        rules_btn = InlineKeyboardButton("📜 Must Read Rules", url=f"https://t.me/{bot_username}?start=rules")
+    else:
+        rules_btn = InlineKeyboardButton("📜 Must Read Rules", callback_data="view_rules")
+    keyboard.append([rules_btn])
+
     admin_controls = []
     # Only show admin panel button in private chats, not in public groups
     if is_admin_user and not in_group:
@@ -113,14 +120,21 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     bot_info = await context.bot.get_me()
     bot_username = bot_info.username or ""
 
-    # Check for deep-link link request: /start req_<option_id>
-    if context.args and len(context.args) > 0 and context.args[0].startswith("req_"):
-        try:
-            option_id = int(context.args[0].replace("req_", ""))
-            await process_link_request(update, context, option_id, user)
+    # Check for deep-link link request: /start req_<option_id> or /start rules
+    if context.args and len(context.args) > 0:
+        arg = context.args[0]
+        if arg.startswith("req_"):
+            try:
+                option_id = int(arg.replace("req_", ""))
+                await process_link_request(update, context, option_id, user)
+                return
+            except ValueError:
+                pass
+        elif arg == "rules":
+            rules_text = database.get_rules()
+            keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]]
+            await update.message.reply_html(rules_text, reply_markup=InlineKeyboardMarkup(keyboard))
             return
-        except ValueError:
-            pass
 
     admin_status = config.is_admin(user.id)
     options = database.get_options()
@@ -535,6 +549,62 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
     except Exception:
         await query.message.reply_html(text, reply_markup=reply_markup)
+
+
+async def view_rules_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Display community rules when requested via inline button."""
+    query = update.callback_query
+    await query.answer()
+
+    rules_text = database.get_rules()
+    keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    try:
+        await query.edit_message_text(
+            text=rules_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
+    except Exception:
+        await query.message.reply_html(rules_text, reply_markup=reply_markup)
+
+
+async def rules_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Display community rules."""
+    rules_text = database.get_rules()
+    bot_info = await context.bot.get_me()
+    bot_username = bot_info.username or ""
+    is_group = update.effective_chat.type in [ChatType.GROUP, ChatType.SUPERGROUP] if update.effective_chat else False
+
+    if is_group:
+        keyboard = []
+        if bot_username:
+            keyboard.append([InlineKeyboardButton("📜 Open Rules in DM", url=f"https://t.me/{bot_username}?start=rules")])
+        await update.message.reply_html(rules_text, reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None)
+    else:
+        keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]]
+        await update.message.reply_html(rules_text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def setrules_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command to update community rules."""
+    user = update.effective_user
+    if not config.is_admin(user.id):
+        await update.message.reply_text("⛔ You are not authorized to use this command.")
+        return
+
+    new_rules = " ".join(context.args) if context.args else ""
+    if not new_rules:
+        current_rules = database.get_rules()
+        await update.message.reply_html(
+            "ℹ️ <b>Usage:</b> <code>/setrules &lt;your rules text&gt;</code>\n\n"
+            "<b>Current Rules:</b>\n" + current_rules
+        )
+        return
+
+    database.set_rules(new_rules)
+    await update.message.reply_html("✅ <b>Community rules updated successfully!</b>")
 
 
 # --- Admin Handlers ---
@@ -1183,6 +1253,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     help_text = (
         "🤖 <b>Telegram Link Bot Help</b>\n\n"
         "• /start - View available options and retrieve links\n"
+        "• /rules - View must-read community guidelines & rules\n"
         "• /help - Display this help guide\n"
     )
 
@@ -1195,6 +1266,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "• <code>/warn [reason]</code> - Warn a member (kicks on 3 warnings)\n"
             "• <code>/unwarn</code> - Remove 1 warning from member\n"
             "• <code>/warns</code> - View warning count of a member\n"
+            "• <code>/setrules &lt;text&gt;</code> - Update community rules\n"
         )
 
     await update.message.reply_html(help_text)
@@ -1250,6 +1322,8 @@ def main() -> None:
     app.add_handler(CommandHandler("warn", warn_command))
     app.add_handler(CommandHandler(["unwarn", "resetwarn"], unwarn_command))
     app.add_handler(CommandHandler(["warns", "warnings"], warnings_command))
+    app.add_handler(CommandHandler("rules", rules_command))
+    app.add_handler(CommandHandler("setrules", setrules_command))
     app.add_handler(CommandHandler("help", help_command))
 
     app.add_handler(add_conv_handler)
@@ -1271,6 +1345,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(toggle_approval_handler, pattern="^toggle_approval$"))
     app.add_handler(CallbackQueryHandler(handle_admin_request_action, pattern="^(appr_req|rejc_req):"))
     app.add_handler(CallbackQueryHandler(handle_main_menu, pattern="^main_menu$"))
+    app.add_handler(CallbackQueryHandler(view_rules_callback_handler, pattern="^view_rules$"))
     app.add_handler(CallbackQueryHandler(handle_link_selection, pattern="^get_link:"))
 
     # Global error handler so unexpected errors do not crash the bot process

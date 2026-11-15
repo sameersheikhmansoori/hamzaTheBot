@@ -331,6 +331,49 @@ class TestVersionOnePointZero(unittest.IsolatedAsyncioTestCase):
         # Verify OSINT social search buttons attached
         self.assertIsNotNone(call_kwargs.get("reply_markup"))
 
+    async def test_10_must_read_rules_button_in_menu(self):
+        """Verify version 1.1: 'Must Read Rules' button is present alongside cohort links."""
+        # 1. Private chat keyboard
+        kb_private = bot.build_user_menu_keyboard(is_admin_user=False, in_group=False)
+        buttons_private = [btn for row in kb_private.inline_keyboard for btn in row]
+        rules_btn_private = next((b for b in buttons_private if "Must Read Rules" in b.text), None)
+        self.assertIsNotNone(rules_btn_private)
+        self.assertEqual(rules_btn_private.callback_data, "view_rules")
+
+        # 2. Group keyboard (deep link to DM)
+        kb_group = bot.build_user_menu_keyboard(is_admin_user=False, in_group=True, bot_username="Hamza_lehariwale_007bot")
+        buttons_group = [btn for row in kb_group.inline_keyboard for btn in row]
+        rules_btn_group = next((b for b in buttons_group if "Must Read Rules" in b.text), None)
+        self.assertIsNotNone(rules_btn_group)
+        self.assertIn("start=rules", rules_btn_group.url)
+
+    async def test_11_rules_handlers_and_customization(self):
+        """Verify /rules command, /setrules customization, and callback handler."""
+        # 1. View rules via callback
+        mock_query = MagicMock()
+        mock_query.answer = AsyncMock()
+        mock_query.edit_message_text = AsyncMock()
+        mock_update = MagicMock(callback_query=mock_query)
+        mock_context = MagicMock()
+
+        await bot.view_rules_callback_handler(mock_update, mock_context)
+        mock_query.edit_message_text.assert_called_once()
+        text_arg = mock_query.edit_message_text.call_args[1]["text"]
+        self.assertIn("COMMUNITY MUST-READ RULES", text_arg)
+
+        # 2. Update rules via /setrules (as Admin)
+        admin_user = MagicMock(id=999999999)
+        mock_msg = MagicMock()
+        mock_msg.reply_html = AsyncMock()
+        mock_admin_update = MagicMock(effective_user=admin_user, message=mock_msg)
+        mock_admin_context = MagicMock(args=["Rule 1: Be nice.", "Rule 2: No spam."])
+
+        await bot.setrules_command(mock_admin_update, mock_admin_context)
+        self.assertIn("Rule 1: Be nice. Rule 2: No spam.", database.get_rules())
+
+        # Reset to default
+        database.set_rules(database.DEFAULT_RULES)
+
 
 if __name__ == "__main__":
     unittest.main()

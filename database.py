@@ -229,6 +229,32 @@ def toggle_approval_mode(db_path: Optional[str] = None) -> bool:
     return new_state
 
 
+DEFAULT_RULES = (
+    "📜 <b>COMMUNITY MUST-READ RULES</b> 📜\n\n"
+    "1️⃣ <b>Respect Every Member:</b>\n"
+    "Kisi ke sath badtameezi, gaali-galoch, ya hate speech strictly prohibited hai.\n\n"
+    "2️⃣ <b>Warning & Kick System (Active):</b>\n"
+    "Group me rule break karne par <code>/warn</code> diya jayega.\n"
+    "⚠️ <b>3 Warnings = Instant Automatic Kick & Ban!</b>\n\n"
+    "3️⃣ <b>Course & Cohort Inquiries:</b>\n"
+    "General group chat me course ya cohort queries spam mat karein. Cohort access ke liye button se request karein ('mt kr lala').\n\n"
+    "4️⃣ <b>No Spam & Unauthorized Promotions:</b>\n"
+    "Bina admin permission koi bhi links, ads, ya promotions allow nahi hain.\n\n"
+    "5️⃣ <b>Follow Admin Decisions:</b>\n"
+    "Admins ke faisle final aur binding honge."
+)
+
+
+def get_rules(db_path: Optional[str] = None) -> str:
+    """Get the community rules text (returns default if not customized)."""
+    return get_setting("community_rules", DEFAULT_RULES, db_path)
+
+
+def set_rules(rules_text: str, db_path: Optional[str] = None) -> None:
+    """Set or update community rules text."""
+    set_setting("community_rules", rules_text, db_path)
+
+
 def create_link_request(user_id: int, username: Optional[str], first_name: Optional[str], option_id: int, db_path: Optional[str] = None) -> int:
     """Create a new pending link request."""
     u_str = str(username) if username is not None else ""

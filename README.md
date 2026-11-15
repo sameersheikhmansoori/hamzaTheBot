@@ -112,3 +112,4 @@ python bot.py
 ├── .env.example     # Template for bot credentials
 └── README.md        # Documentation and usage guide
 ```
+# hamzaTheBot

@@ -152,8 +152,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     welcome_text = (
         f"👋 <b>{user.first_name}</b>, lehari me apka sawagat h! kya chahiye aapko?\n\n"
-        "Neeche diye gaye options me se select karein:"
-    )
+        "TLE prime k liye target 200 h")
     reply_markup = build_user_menu_keyboard(is_admin_user=admin_status, in_group=is_group, bot_username=bot_username)
     await update.message.reply_html(welcome_text, reply_markup=reply_markup)
 

@@ -46,3 +46,5 @@ For Telegram groups:
 - Bot should be promoted to **Administrator** with "Send Messages" permission so Telegram delivers `chat_member` updates in supergroups.
 ### new version 1.0
  kya tum aisa bna skte ho ki user jb select kre to direct link expose na ho aur request mere pass aye then i will give him 
+ ### new version 1.1
+ bahi bot me cohort link ka alawa must read rules add kro

@@ -29,11 +29,14 @@ class TestVersionOnePointZero(unittest.IsolatedAsyncioTestCase):
         database.DB_PATH = self.test_db
         database.init_db(self.test_db)
         bot._welcomed_cache.clear()
+        self.orig_admin_ids = config.ADMIN_IDS
+        config.ADMIN_IDS = [2133041216]
 
     def tearDown(self):
         database.DB_PATH = "bot.db"
         if os.path.exists(self.test_db):
             os.remove(self.test_db)
+        config.ADMIN_IDS = self.orig_admin_ids
 
     async def test_01_v1_approval_mode_default_on(self):
         """In Version 1.0, approval mode must be enabled by default to prevent direct link exposure."""
@@ -238,6 +241,41 @@ class TestVersionOnePointZero(unittest.IsolatedAsyncioTestCase):
             self.assertIn("1 warning removed", text)
         finally:
             config.ADMIN_IDS = orig_admin_ids
+
+    async def test_08_course_query_replies_mt_kr_lala(self):
+        """Verify that course queries in group chat get replied with 'mt kr lala'."""
+        mock_user = MagicMock(id=9999, first_name="Student", username="learner", is_bot=False)
+        mock_chat = MagicMock(type="supergroup", id=-1007777)
+        mock_context = MagicMock()
+
+        # Course query test message
+        mock_message_course = MagicMock()
+        mock_message_course.text = "bhai koi cohort 2.0 ya web dev course hai kya?"
+        mock_message_course.reply_text = AsyncMock()
+
+        mock_update = MagicMock()
+        mock_update.message = mock_message_course
+        mock_update.effective_message = mock_message_course
+        mock_update.effective_chat = mock_chat
+        mock_update.effective_user = mock_user
+
+        await bot.course_query_handler(mock_update, mock_context)
+        mock_message_course.reply_text.assert_called_once_with("mt kr lala")
+
+        # Non-course query test message (should NOT trigger)
+        mock_message_normal = MagicMock()
+        mock_message_normal.text = "good morning everyone"
+        mock_message_normal.caption = None
+        mock_message_normal.reply_text = AsyncMock()
+
+        mock_update_normal = MagicMock()
+        mock_update_normal.message = mock_message_normal
+        mock_update_normal.effective_message = mock_message_normal
+        mock_update_normal.effective_chat = mock_chat
+        mock_update_normal.effective_user = mock_user
+
+        await bot.course_query_handler(mock_update_normal, mock_context)
+        mock_message_normal.reply_text.assert_not_called()
 
 
 if __name__ == "__main__":

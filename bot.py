@@ -1001,6 +1001,43 @@ async def warnings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
 
 
+COURSE_QUERY_PATTERN = re.compile(
+    r"\b(course|courses|cohort|cohorts|batch|batches|lecture|lectures|classes|syllabus|tutorial|tutorials|notes|fees)\b",
+    re.IGNORECASE
+)
+
+
+async def course_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Respond 'mt kr lala' to course queries in group chats."""
+    message = update.effective_message or update.message
+    if not message:
+        return
+
+    raw_text = getattr(message, "text", None) or getattr(message, "caption", None)
+    if not isinstance(raw_text, str) or not raw_text.strip():
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+    if not chat or not user:
+        return
+
+    # Check if sender is a bot or admin
+    if getattr(user, "is_bot", False) or config.is_admin(getattr(user, "id", 0)):
+        return
+
+    if COURSE_QUERY_PATTERN.search(raw_text):
+        try:
+            await message.reply_text("mt kr lala")
+        except Exception as e:
+            logger.error(f"Failed to reply 'mt kr lala': {e}")
+
+
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle unexpected errors gracefully without crashing the bot."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Display help information."""
     user = update.effective_user
@@ -1087,6 +1124,9 @@ def main() -> None:
     # Respond to regular messages in private chat
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_private_message))
 
+    # Respond 'mt kr lala' to course queries in group chats
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, course_query_handler))
+
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     app.add_handler(CallbackQueryHandler(admin_manage_links, pattern="^admin_manage$"))
     app.add_handler(CallbackQueryHandler(admin_delete_link, pattern="^admin_del:"))
@@ -1094,6 +1134,9 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(handle_admin_request_action, pattern="^(appr_req|rejc_req):"))
     app.add_handler(CallbackQueryHandler(handle_main_menu, pattern="^main_menu$"))
     app.add_handler(CallbackQueryHandler(handle_link_selection, pattern="^get_link:"))
+
+    # Global error handler so unexpected errors do not crash the bot process
+    app.add_error_handler(global_error_handler)
 
     logger.info("Bot is starting polling...")
     print("🚀 Telegram bot is active and listening for messages. Press Ctrl+C to stop.")

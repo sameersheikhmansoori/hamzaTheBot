@@ -168,6 +168,15 @@ def register_user(user_id: int, username: Optional[str], first_name: Optional[st
         conn.commit()
 
 
+def get_user(user_id: int, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Retrieve stored user details by ID."""
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username, first_name, last_name, first_seen FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
 def get_stats(db_path: Optional[str] = None) -> Dict[str, int]:
     """Retrieve summary statistics."""
     with get_connection(db_path) as conn:
